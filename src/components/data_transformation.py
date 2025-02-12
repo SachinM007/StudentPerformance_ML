@@ -3,7 +3,8 @@ import sys
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from sklearn.preprocessing import OneHotEncoder, StandardScaler, PowerTransformer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.impute import SimpleImputer #for handling missing values
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
@@ -29,21 +30,39 @@ class DataTransformation:
         except Exception as e:
             raise CustomException(e, sys) from e
         
-    def get_data_transformer_object(self, numerical_cols, categorical_cols, transform_cols):
+    def get_data_transformer_object(self):
         logging.info("Entered the data transformation")
 
         try:
-            numeric_transformer = StandardScaler()
-            one_hot_transformer = OneHotEncoder()
-            power_transform = Pipeline(steps= [('transformer', PowerTransformer(method='yeo-johnson'))])
+            numerical_columns = ["writing_score", "reading_score"]
+            categorical_columns = [
+                "gender",
+                "race_ethnicity",
+                "parental_level_of_education",
+                "lunch",
+                "test_preparation_course",
+            ]
 
-            preprocessor = ColumnTransformer(
-                [
-                    ("OneHotEncoder",one_hot_transformer,categorical_cols)
-                    ("StandardScaler",numeric_transformer,numerical_cols)
-                    ("Transformer",power_transform,transform_cols)
-                ]
-            )
+            #Handle missing values and perform Standard scaling on numerical features
+            num_pipeline = Pipeline(steps=[
+                ("imputer",SimpleImputer(strategy="median")), #replace missing values with mean
+                ("scaler",StandardScaler())
+            ])
+
+            #Handle missing values and perform one hot encodingon categorical features
+            cat_pipeline = Pipeline(steps=[
+                ("imputer",SimpleImputer(strategy="most_frequent")), #replace missing values with mode
+                ("one_hot_encoder",OneHotEncoder()),
+                ("scaler",StandardScaler())
+            ])
+
+            logging.info(f"Categorical columns: {categorical_columns}")
+            logging.info(f"Numerical columns: {numerical_columns}")
+
+            preprocessor = ColumnTransformer([
+               ("num_pipeline",num_pipeline,numerical_columns),
+               ("cat_pipeline",cat_pipeline,categorical_columns)
+           ])
 
             logging.info("Created data preprocessor object using Column Transformer")
 
@@ -72,11 +91,11 @@ class DataTransformation:
             Y_test = test_df[target_column_name]
 
             logging.info(
-                f"Applying preprocessing object on training dataframe and testing dataframe."
+                "Applying preprocessing object on training dataframe and testing dataframe."
             )
 
             X_train_arr = preprocessor.fit_transform(X_train)
-            X_test_arr = preprocessor.fit_transform(X_test)
+            X_test_arr = preprocessor.transform(X_test)
 
             train_arr = np.c_[
                 X_train_arr, np.array(Y_train)
@@ -89,12 +108,13 @@ class DataTransformation:
             )
 
             logging.info(f"Saved preprocessing object at:{self.transformation_config.preprocessor_obj_file_path}") 
+            
             return (
                 train_arr,
                 test_arr,
                 self.transformation_config.preprocessor_obj_file_path
             )
-
+ 
 
         except Exception as e:
             raise CustomException(e, sys) from e
